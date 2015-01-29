@@ -1,0 +1,100 @@
+#Generic Library makefile for a shared library and driver.
+#Assumes that driver will dynamically load library.
+
+#### Often changed section ####
+DRIVER_FILES=driver.cpp test.cpp
+LIB_FILES=lib.cpp
+
+#### Project Changed ####
+LIB_NAME  = sharelib
+
+DRIVER_CFLAGS =-Wl,--no-as-needed -std=c++11 
+LIB_CFLAGS =  -fPIC -std=c++11
+
+DRIVER_LIBS = 
+LIB_LIBS = -lpthread
+
+DYNAMIC_LOAD = 1
+
+#### Rarely Changed ###
+LIB_SRC = $(PWD)/src
+DRIVER_SRC = $(PWD)/src
+
+BUILDDIR = $(PWD)/build
+OUTDIR = $(BUILDDIR)/bin
+TEMPDIR = $(BUILDDIR)/tmp
+
+DRIVER_TARGET = driver
+LIB_TARGET = lib$(LIB_NAME).so
+
+#### Almost Never Changed ####
+CXX = g++
+MKDIR_CMD = mkdir -p
+RM_CMD = rm -f
+
+#### Never Changed (never say never:) ####
+SUFFIXES += .dd .ld .lo .do
+
+
+
+DRIVER_SOURCES = $(patsubst %,$(SRC)/%,$(DRIVER_FILES))
+DRIVER_OBJECTS = $(patsubst %.cpp,$(TEMPDIR)/%.do,$(DRIVER_FILES))
+DRIVER_DEPS    = $(patsubst %.cpp,$(TEMPDIR)/%.dd,$(DRIVER_FILES))
+
+LIB_SOURCES    = $(patsubst %,$(SRC)/%,$(LIB_FILES))
+LIB_OBJECTS    = $(patsubst %.cpp,$(TEMPDIR)/%.lo,$(LIB_FILES))
+LIB_DEPS       = $(patsubst %.cpp,$(TEMPDIR)/%.ld,$(LIB_FILES))
+
+
+.PHONY: directories clean run
+
+$(TEMPDIR)/%.do: $(TEMPDIR)/%.dd
+	$(CXX) $(DRIVER_CFLAGS) -c $(DRIVER_SRC)/$*.cpp -o $@
+
+$(TEMPDIR)/%.lo: #$(TEMPDIR)/%.ld
+	$(CXX) $(LIB_CFLAGS) -c $(LIB_SRC)/$*.cpp -o $@
+
+$(TEMPDIR)/%.ld: $(LIB_SRC)/%.cpp
+	$(CXX) $(LIB_CFLAGS) -MM -MT $(TEMPDIR)/$*.lo $< -o $@
+
+$(TEMPDIR)/%.dd: $(DRIVER_SRC)/%.cpp
+	$(CXX) $(DRIVER_CFLAGS) -MM -MT $(TEMPDIR)/$*.do $< -o $@
+
+$(OUTDIR)/$(LIB_TARGET): $(LIB_OBJECTS)
+	$(CXX) $(LIB_LDFLAGS) -shared  $(LIB_OBJECTS) -o $(OUTDIR)/$(LIB_TARGET)
+
+ifeq ($(DYNAMIC_LOAD),0)
+$(OUTDIR)/$(DRIVER_TARGET): $(DRIVER_OBJECTS)
+	$(CXX) $(DRIVER_LDFLAGS) -Wl,-R -Wl,$(OUTDIR) $(DRIVER_OBJECTS) $(OUTDIR)/$(LIB_TARGET) -o $(OUTDIR)/$(DRIVER_TARGET)
+endif
+ifeq ($(DYNAMIC_LOAD),1)
+$(OUTDIR)/$(DRIVER_TARGET): $(DRIVER_OBJECTS)
+	$(CXX) $(DRIVER_LDFLAGS) $(DRIVER_OBJECTS) $(OUTDIR)/$(LIB_TARGET) -o $(OUTDIR)/$(DRIVER_TARGET) -ldl
+endif
+
+ifneq ($(MAKECMDGOALS),clean)
+-include $(DRIVER_DEPS)
+-include $(LIB_DEPS)
+endif
+
+all: directories library driver
+
+driver: directories library $(OUTDIR)/$(DRIVER_TARGET)
+
+library: directories $(OUTDIR)/$(LIB_TARGET)
+
+directories: $(OUTDIR) $(TEMPDIR)
+
+$(OUTDIR): 
+	$(MKDIR_CMD) $(OUTDIR)
+
+$(TEMPDIR):
+	$(MKDIR_CMD) $(TEMPDIR)
+
+clean:
+	$(RM_CMD) $(TEMPDIR)/* $(OUTDIR)/*
+
+run: all
+	$(OUTDIR)/$(DRIVER_TARGET)
+	@echo ""
+
